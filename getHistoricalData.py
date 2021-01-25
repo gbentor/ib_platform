@@ -1,12 +1,12 @@
-from IBApp import DataRequest, IBFactory
-from IBUtils import init_app_listener, is_weekly_options, Config
-
 import time
 import os
 import tkinter as tk
-from datetime import datetime, timedelta
-from tkinter import messagebox
 import logging
+from tkinter import messagebox
+from datetime import datetime, timedelta
+
+from IBApp import DataRequest, IBFactory
+from IBUtils import init_app_listener, is_weekly_options, Config
 
 logging.getLogger("MainLogger")
 logging.basicConfig(format='%(message)s')
@@ -70,8 +70,7 @@ def get_times_and_interval(start_time: datetime, end_time: datetime, date: datet
 
 
 def main(config: Config):
-    app = IBFactory.createIBapi(config.sec_type, config.output_type)
-    app.set_shift_hours(config.shift_hours)
+    app = IBFactory.createIBapi(config)
 
     logging.getLogger("MainLogger").info(''.join(["Dates: "] + [date.strftime('%d/%m/%Y') + ", " for date in config.dates] + ["\n"]))
 
@@ -99,7 +98,7 @@ def main(config: Config):
             if is_file_exists(file_name):
                 # if file already exists and we don't want to overwrite - continue to next date
                 continue
-            app.output_file = open(file_name, f"{'w+' if config.output_type == 'txt' else 'wb+'}")
+            app.output_file = open(file_name, f"{'w+' if app.output_type == 'txt' else 'wb+'}")
 
             while query_time < end_time:
                 app.remove_contracts()
@@ -123,7 +122,6 @@ def main(config: Config):
         time.sleep(0.1)
     logging.getLogger("MainLogger").info("Terminating...")
     app.done = True
-    exit()
 
 
 if __name__ == "__main__":

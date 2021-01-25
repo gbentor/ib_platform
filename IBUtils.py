@@ -1,9 +1,9 @@
 import time
 import threading
-from random import randint
 import numpy as np
-from datetime import datetime, timedelta
 import configparser
+from random import randint
+from datetime import datetime, timedelta
 
 
 class Config:

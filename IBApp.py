@@ -1,18 +1,17 @@
 import logging
 import os
+import datetime as dt
+import time
+import threading
+from collections import OrderedDict
+from random import randint
+from abc import ABC, abstractmethod
+from collections import defaultdict
 
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
 from ibapi.contract import Contract
-
 from IBUtils import get_req_id, get_opt_arr_from_line, get_arr_from_line, Config
-from collections import OrderedDict
-import datetime as dt
-from random import randint
-import time
-from abc import ABC, abstractmethod
-import threading
-from collections import defaultdict
 from Utils import get_closest_expiry, take_closest
 
 OPEN_SPOT_PRICE_REQ_ID = 1
@@ -45,7 +44,7 @@ class DataRequest:
         self.req_id = -1
 
 
-class option_chain_data:
+class OptionChainData:
     """
     When handling options data, we keep the entire options chain, with the contract for each specific option
     """
@@ -68,10 +67,10 @@ class IBapi(EWrapper, EClient, ABC):
     """
     Abstract class that handles all communication with TWS.
     """
-    def __init__(self, output_type):
+    def __init__(self, config: Config):
         EClient.__init__(self, self)
-        self.output_type = output_type
-        self.output_file = None
+        self.output_type = config.output_type
+        self.output_file = ""
         self.option_chain_data = None
         self.contracts_to_delete = defaultdict(lambda: [])
         self.req_id_to_contract = {}
@@ -79,12 +78,7 @@ class IBapi(EWrapper, EClient, ABC):
         self.sent_time_queue = []
         self.mode = "historical"
         self.lock = threading.Lock()
-
-        self.__shift_hours = 0
-
-    @abstractmethod
-    def create(self, output_type: str):
-        pass
+        self.shift_hours = config.shift_hours
 
     @abstractmethod
     def historicalData(self, req_id: int, bar):
@@ -95,7 +89,7 @@ class IBapi(EWrapper, EClient, ABC):
         :param bar: the bar object, containing date, open, low, high and close
         """
         update_time = dt.datetime.strptime(bar.date, '%Y%m%d  %H:%M:%S')
-        update_time = update_time.replace(hour=update_time.hour - self.__shift_hours)  # shift time if needed
+        update_time = update_time.replace(hour=update_time.hour - self.shift_hours)  # shift time if needed
         bar.date = update_time.strftime('%H%M%S')
 
     def send_live_data_request(self, contract):
@@ -211,7 +205,7 @@ class IBapi(EWrapper, EClient, ABC):
         Set this values to anything but 0, to shift the time before writing to file
         :param shift: shift time in hours
         """
-        self.__shift_hours = shift
+        self.shift_hours = shift
 
     def remove_contracts(self):
         """
@@ -236,11 +230,8 @@ class IBapi(EWrapper, EClient, ABC):
 
 
 class OPT(IBapi):
-    def __init__(self, output_type: str):
-        super().__init__(output_type)
-
-    def create(self, output_type: str):
-        return OPT(output_type)
+    def __init__(self, config: Config):
+        super().__init__(config)
 
     def send_historical_data_request(self, data_request: DataRequest):
         """
@@ -293,7 +284,7 @@ class OPT(IBapi):
 
         return all_contracts
 
-    def get_all_needed_contracts(self, asset: str, date: dt, is_weekly: bool, config: dict):
+    def get_all_needed_contracts(self, asset: str, date: dt, is_weekly: bool, config: Config):
         """
         Each strike on each side is considered a different contract, So when requesting data on options we first need
         to decide with strikes on each side we want get.
@@ -302,7 +293,7 @@ class OPT(IBapi):
         :param is_weekly: weekly options or monthly
         :param config: config params
         """
-        self.option_chain_data = option_chain_data(asset)
+        self.option_chain_data = OptionChainData(asset)
         self.contracts_to_delete.clear()
 
         next_expiry = get_closest_expiry(date, os.getcwd(), is_weekly)  # get the closest expiry to this dates, depending if that's a monthly or weekly option
@@ -371,11 +362,8 @@ class OPT(IBapi):
 
 
 class STK(IBapi):
-    def __init__(self, output_type: str):
-        super().__init__(output_type)
-
-    def create(self, output_type: str):
-        return STK(output_type)
+    def __init__(self, config: Config):
+        super().__init__(config)
 
     def send_historical_data_request(self, data_request: DataRequest):
         """
@@ -413,11 +401,8 @@ class STK(IBapi):
 
 
 class FX(IBapi):
-    def __init__(self, output_type: str):
-        super().__init__(output_type)
-
-    def create(self, output_type: str):
-        return FX(output_type)
+    def __init__(self, config: Config):
+        super().__init__(config)
 
     def send_historical_data_request(self, data_request: DataRequest):
         """
@@ -473,7 +458,7 @@ class IBFactory(object):
     Factory function to create the required instance
     """
     @classmethod
-    def createIBapi(cls, designation, output_type):
-        if designation not in [cls.__name__ for cls in IBapi.__subclasses__()]:
+    def createIBapi(cls, config: Config):
+        if config.sec_type not in [cls.__name__ for cls in IBapi.__subclasses__()]:
             raise Exception("Unrecognized class")
-        return eval(designation)(output_type)
+        return eval(config.sec_type)(config)
